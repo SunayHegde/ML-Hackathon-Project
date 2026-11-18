@@ -1,0 +1,60 @@
+{
+  "model": "LightGBM",
+  "best_params": {
+    "n_estimators": 142,
+    "learning_rate": 0.06494190031509238,
+    "num_leaves": 147,
+    "min_child_samples": 207,
+    "subsample": 0.8068758665547184,
+    "colsample_bytree": 0.4073867017389627,
+    "reg_lambda": 0.005090091642013832,
+    "reg_alpha": 0.004149172813795599
+  },
+  "best_cv3_macro_f1": 0.9346022853600461,
+  "n_trials": 12,
+  "search_seconds": 137.02602434158325,
+  "search_space": {
+    "n_estimators": [
+      "int",
+      100,
+      800
+    ],
+    "learning_rate": [
+      "float_log",
+      0.01,
+      0.2
+    ],
+    "num_leaves": [
+      "int",
+      15,
+      255
+    ],
+    "min_child_samples": [
+      "int",
+      10,
+      300
+    ],
+    "subsample": [
+      "float",
+      0.5,
+      1.0
+    ],
+    "colsample_bytree": [
+      "float",
+      0.4,
+      1.0
+    ],
+    "reg_lambda": [
+      "float_log",
+      0.001,
+      10.0
+    ],
+    "reg_alpha": [
+      "float_log",
+      0.001,
+      10.0
+    ]
+  },
+  "objective": "mean macro F1, 3-fold GroupKFold on 80 train trips (20% of fixes sampled)",
+  "sampler": "TPE (seed 42)"
+}

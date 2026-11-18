@@ -1,0 +1,6 @@
+INFO:     Started server process [33652]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 13] error while attempting to bind on address ('0.0.0.0', 8010): [winerror 10013] an attempt was made to access a socket in a way forbidden by its access permissions
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PathSnap Evaluator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --ink:#1d2433; --muted:#667085; --accent:#d81b60; --line:#e3e6eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:12px 16px; background:#1d2433; color:#fff; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; }
+  header input { width:260px; max-width:100%; padding:5px 8px; border-radius:4px; border:0; }
+  header button, .trip { cursor:pointer; }
+  main { display:grid; grid-template-columns: 300px 1fr; gap:12px; padding:12px; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
+  .trip { display:block; width:100%; text-align:left; margin:4px 0; padding:8px 10px; border:1px solid var(--line);
+          background:#fff; border-radius:6px; font:inherit; }
+  .trip:hover { border-color:var(--accent); }
+  .trip.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  #map { height: 70vh; min-height: 420px; border-radius:8px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  td, th { padding:4px 6px; border-bottom:1px solid var(--line); text-align:left; }
+  th { color:var(--muted); font-weight:600; }
+  .status { color:var(--muted); margin:6px 0; min-height:1.2em; }
+  .err { color:#b42318; }
+  .legend span { display:inline-block; width:18px; height:4px; vertical-align:middle; margin-right:4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>PathSnap &middot; Evaluator UI</h1>
+  <label>API URL <input id="api" placeholder="http://LAPTOP1_IP:8000"></label>
+  <button id="connect">Connect</button>
+  <span id="health" class="status" style="color:#cfd4dc"></span>
+</header>
+<main>
+  <section class="card">
+    <h3 style="margin-top:0">Evaluation trips</h3>
+    <div id="trips" class="status">Connect to the API to list trips.</div>
+    <label style="display:block;margin-top:8px"><input type="checkbox" id="useHmm" checked> Use HMM / Viterbi decoding</label>
+    <h3>Results</h3>
+    <div id="status" class="status"></div>
+    <table id="metrics"></table>
+  </section>
+  <section class="card">
+    <div id="map"></div>
+    <div class="legend" style="margin-top:6px">
+      <span style="background:#1565c0;height:8px;width:8px;border-radius:50%"></span>GPS fixes &nbsp;
+      <span style="background:#d81b60"></span>Predicted route &nbsp;
+      <span style="background:#ef6c00"></span>Classifier-only (toggle in layer menu)
+    </div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let API = new URLSearchParams(location.search).get("api") || "";
+if (!API) { try { API = localStorage.getItem("pathsnap_api") || ""; } catch (e) {} }
+if (!API) API = `http://${location.hostname || "localhost"}:8000`;
+$("api").value = API;
+
+const map = L.map("map").setView([50, 10], 4);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+let layers = [], ctrl = null;
+
+async function connect() {
+  API = $("api").value.replace(/\/$/, "");
+  try { localStorage.setItem("pathsnap_api", API); } catch (e) {}
+  $("trips").textContent = "Loading…";
+  try {
+    const h = await (await fetch(`${API}/health`)).json();
+    $("health").textContent = `connected · model ${h.model} · beta ${h.hmm.beta}`;
+    const r = await (await fetch(`${API}/trips`)).json();
+    $("trips").innerHTML = "";
+    r.trips.forEach(t => {
+      const b = document.createElement("button");
+      b.className = "trip"; b.textContent = `Trip ${t.trip_id}  (${t.n_fixes} fixes)`;
+      b.onclick = () => run(t.trip_id, b);
+      $("trips").appendChild(b);
+      if (new URLSearchParams(location.search).get("trip") === t.trip_id) run(t.trip_id, b);
+    });
+  } catch (e) {
+    $("trips").innerHTML = `<span class="err">Cannot reach ${API}: ${e} — retrying in 3 s…</span>`;
+    setTimeout(connect, 3000);
+  }
+}
+
+async function run(tripId, btn) {
+  document.querySelectorAll(".trip").forEach(x => x.classList.remove("active"));
+  btn.classList.add("active");
+  $("status").textContent = `Sending trip ${tripId} to API…`; $("metrics").innerHTML = "";
+  try {
+    const resp = await fetch(`${API}/predict`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trip_id: tripId, use_hmm: $("useHmm").checked }) });
+    if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
+    const r = await resp.json();
+    draw(r);
+    const m = r.metrics, rows = [
+      ["GPS fixes", r.n_fixes],
+      ["Top-1 accuracy (HMM)", m.top1_accuracy_hmm],
+      ["Top-1 accuracy (classifier only)", m.top1_accuracy_classifier],
+      ["Route F1 (HMM)", m.route_f1_hmm],
+      ["Route precision / recall (HMM)", `${m.route_precision_hmm} / ${m.route_recall_hmm}`],
+      ["Route continuity (HMM)", m.route_continuity_hmm],
+      ["Route continuity (classifier)", m.route_continuity_classifier],
+      ["Fixes without candidates", m.fixes_without_candidates],
+      ["HMM chain breaks", r.hmm_breaks],
+      ["Classifier time (s)", r.timing.classifier_s],
+      ["HMM time (s)", r.timing.hmm_s],
+      ["Total API time (s)", r.timing.total_s],
+    ];
+    $("metrics").innerHTML = "<tr><th>Metric</th><th>Value</th></tr>" +
+      rows.map(([k, v]) => `<tr><td>${k}</td><td>${v ?? "n/a"}</td></tr>`).join("");
+    $("status").innerHTML = `Trip ${tripId} done · <a href="${API}/map/${tripId}" target="_blank">open Folium map</a>`;
+  } catch (e) {
+    $("status").innerHTML = `<span class="err">${e}</span>`;
+  }
+}
+
+function draw(r) {
+  layers.forEach(l => map.removeLayer(l)); layers = [];
+  if (ctrl) map.removeControl(ctrl);
+  const gps = L.layerGroup(r.gps.map(p => L.circleMarker(p, { radius: 2, color: "#1565c0", weight: 1, fillOpacity: .9 })));
+  const pred = L.layerGroup(r.predicted_route.map(l => L.polyline(l, { color: "#d81b60", weight: 5, opacity: .85 })));
+  const clf = L.layerGroup(r.classifier_route.map(l => L.polyline(l, { color: "#ef6c00", weight: 3, dashArray: "6 6" })));
+  [pred, gps].forEach(l => { l.addTo(map); layers.push(l); }); layers.push(clf);
+  ctrl = L.control.layers(null, { "GPS fixes": gps, "Predicted route": pred, "Classifier-only": clf }, { collapsed: false }).addTo(map);
+  map.invalidateSize();
+  map.fitBounds(L.latLngBounds(r.gps), { padding: [20, 20] });
+}
+
+$("connect").onclick = connect;
+connect();
+</script>
+</body>
+</html>

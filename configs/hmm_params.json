@@ -1,0 +1,7 @@
+{
+  "beta": 5.0,
+  "w_emission": 0.25,
+  "uturn_penalty": 2.0,
+  "max_cutoff": 3000.0,
+  "max_states": 8
+}

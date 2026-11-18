@@ -1,0 +1,3 @@
+partition,trips,obs_total,obs_median,obs_min,obs_max,nan_values,invalid_coords,non_increasing_ts,dt_frac_1s_mean,gaps_gt_10s,jumps_gt_60ms,nodes_median,arcs_median,isolated_nodes,route_connected_frac_mean,all_have_route
+student_test,10,19160,1420.0,262,3958,0,0,0,0.9819896936551981,27,2,6596.5,13145.0,0,0.9997319034852546,True
+train,80,208417,1529.0,361,19313,0,0,0,0.9383341170217598,590,546,9608.0,19526.5,0,0.9993461551444497,True
